@@ -580,6 +580,263 @@ app.get('/similar-lessons', async(req, res) => {
    res.send(result);
 });
 
+app.get('/similar-lessons/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   // current lesson
+   const currentLesson =
+   await lessonsCollection.findOne({
+
+      _id: new ObjectId(id)
+   });
+
+   // related query
+   const query = {
+
+      _id: {
+         $ne: new ObjectId(id)
+      },
+
+      privacy: 'Public',
+
+      $or: [
+
+         {
+            category:
+            currentLesson.category
+         },
+
+         {
+            emotionalTone:
+            currentLesson.emotionalTone
+         }
+      ]
+   };
+
+   const result =
+   await lessonsCollection
+   .find(query)
+   .limit(6)
+   .toArray();
+
+   res.send(result);
+});
+
+
+
+app.get('/featured-lessons', async(req, res) => {
+
+   const query = {
+
+      // isFeatured: true,
+
+      
+   };
+
+   const result =
+   await lessonsCollection
+   .find(query)
+   .limit(6)
+   .toArray();
+
+   res.send(result);
+});
+
+
+
+app.get('/top-contributors', async(req, res) => {
+
+   const result =
+   await lessonsCollection.aggregate([
+
+      {
+         $group: {
+
+            _id: "$creatorEmail",
+
+            creatorName: {
+               $first: "$creatorName"
+            },
+
+            creatorPhoto: {
+               $first: "$creatorPhoto"
+            },
+
+            totalLessons: {
+               $sum: 1
+            }
+         }
+      },
+
+      {
+         $sort: {
+            totalLessons: -1
+         }
+      },
+
+      {
+         $limit: 6
+      }
+
+   ]).toArray();
+
+   res.send(result);
+});
+
+app.get('/most-saved-lessons', async(req, res) => {
+
+   const result =
+   await lessonsCollection
+   .find({
+      privacy: 'Public'
+   })
+   .sort({
+      favoritesCount: -1
+   })
+   .limit(6)
+   .toArray();
+
+   res.send(result);
+});
+
+
+
+
+app.get('/dashboard-stats/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   // total lessons
+   const totalLessons =
+   await lessonsCollection.countDocuments({
+
+      creatorEmail: email
+   });
+
+   // total favorites
+   const totalFavorites =
+   await favoritesCollection.countDocuments({
+
+      userEmail: email
+   });
+
+   // recent lessons
+   const recentLessons =
+   await lessonsCollection
+
+   .find({
+      creatorEmail: email
+   })
+
+   .sort({
+      createdAt: -1
+   })
+
+   .limit(5)
+
+   .toArray();
+
+   res.send({
+
+      totalLessons,
+
+      totalFavorites,
+
+      recentLessons
+   });
+});
+
+
+app.get('/favorites/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   const {
+      category,
+      emotionalTone
+   } = req.query;
+
+   const query = {
+
+      userEmail: email
+   };
+
+   // favorites
+   const favorites =
+   await favoritesCollection
+   .find(query)
+   .toArray();
+
+   // lesson ids
+   const lessonIds =
+   favorites.map(fav =>
+      new ObjectId(fav.lessonId)
+   );
+
+   // lesson query
+   const lessonQuery = {
+
+      _id: {
+         $in: lessonIds
+      }
+   };
+
+   // filter category
+   if(category){
+
+      lessonQuery.category = category;
+   }
+
+   // filter emotional tone
+   if(emotionalTone){
+
+      lessonQuery.emotionalTone =
+      emotionalTone;
+   }
+
+   const result =
+   await lessonsCollection
+   .find(lessonQuery)
+   .toArray();
+
+   res.send(result);
+});
+
+app.delete('/favorites/:lessonId/:email', async(req, res) => {
+
+   const {
+      lessonId,
+      email
+   } = req.params;
+
+   // remove favorite
+   const result =
+   await favoritesCollection.deleteOne({
+
+      lessonId,
+
+      userEmail: email
+   });
+
+   // decrease count
+   await lessonsCollection.updateOne(
+
+      {
+         _id: new ObjectId(lessonId)
+      },
+
+      {
+         $inc: {
+            favoritesCount: -1
+         }
+      }
+   );
+
+   res.send(result);
+});
+
+
 
 
 

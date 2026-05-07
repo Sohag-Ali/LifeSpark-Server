@@ -45,6 +45,12 @@ async function run() {
     const usersCollection = db.collection('users');
     const lessonsCollection = db.collection('lessons');
 
+   const favoritesCollection = db.collection('favorites');
+
+   const commentsCollection = db.collection('comments');
+
+   const reportsCollection = db.collection('reports');
+
 
 // API endpoint to create a new user
 
@@ -79,6 +85,17 @@ async function run() {
     app.post('/lessons', async(req, res) => {
 
    const lesson = req.body;
+      // default fields
+   lesson.likes = [];
+
+   lesson.likesCount = 0;
+
+   lesson.favoritesCount = 0;
+
+   lesson.updatedAt = new Date();
+
+   lesson.createdAt = new Date();
+
 
    const result = await lessonsCollection.insertOne(lesson);
 
@@ -145,6 +162,7 @@ app.patch('/lessons/:id', async(req, res) => {
          privacy: updatedLesson.privacy,
 
          accessLevel: updatedLesson.accessLevel,
+         updatedAt: new Date()
       }
    };
 
@@ -222,6 +240,346 @@ app.get('/public-lessons/:email', async(req, res) => {
 
    res.send(result);
 });
+
+
+app.get('/public-lessons', async(req, res) => {
+
+   const query = {
+      privacy: 'Public'
+   };
+
+   const result = await lessonsCollection
+   .find(query)
+   .sort({ createdAt: -1 })
+   .toArray();
+
+   res.send(result);
+});
+
+
+
+
+
+
+// details of a public lesson for non-logged in users
+
+app.get('/creator-lessons-count/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   const query = {
+      creatorEmail: email
+   };
+
+   const count =
+   await lessonsCollection.countDocuments(query);
+
+   res.send({ count });
+});
+
+
+
+app.patch('/lessons/like/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const { email } = req.body;
+
+   const query = {
+      _id: new ObjectId(id)
+   };
+
+   const lesson =
+   await lessonsCollection.findOne(query);
+
+   const alreadyLiked =
+   lesson.likes?.includes(email);
+
+   let updateDoc;
+
+   if(alreadyLiked){
+
+      updateDoc = {
+
+         $pull: {
+            likes: email
+         },
+
+         $inc: {
+            likesCount: -1
+         }
+      };
+
+   } else {
+
+      updateDoc = {
+
+         $push: {
+            likes: email
+         },
+
+         $inc: {
+            likesCount: 1
+         }
+      };
+   }
+
+   const result =
+   await lessonsCollection.updateOne(
+      query,
+      updateDoc
+   );
+
+   res.send(result);
+});
+
+
+app.post('/favorites', async(req, res) => {
+
+   const favorite = req.body;
+
+   const query = {
+
+      lessonId: favorite.lessonId,
+
+      userEmail: favorite.userEmail
+   };
+
+   const alreadyExists =
+   await favoritesCollection.findOne(query);
+
+   if(alreadyExists){
+
+      return res.send({
+
+         inserted: false,
+
+         message: 'Already favorited'
+      });
+   }
+
+   // increase favorites count
+   await lessonsCollection.updateOne(
+
+      {
+         _id: new ObjectId(
+            favorite.lessonId
+         )
+      },
+
+      {
+         $inc: {
+            favoritesCount: 1
+         }
+      }
+   );
+
+   const result =
+   await favoritesCollection.insertOne(
+      favorite
+   );
+
+   res.send(result);
+});
+
+
+app.patch('/favorites/:lessonId', async(req, res) => {
+
+   const lessonId = req.params.lessonId;
+
+   const { userEmail } = req.body;
+
+   // already favorite?
+   const existingFavorite =
+   await favoritesCollection.findOne({
+
+      lessonId,
+      userEmail
+   });
+
+   // REMOVE
+   if(existingFavorite){
+
+      await favoritesCollection.deleteOne({
+
+         _id: existingFavorite._id
+      });
+
+      await lessonsCollection.updateOne(
+
+         {
+            _id: new ObjectId(lessonId)
+         },
+
+         {
+            $inc: {
+               favoritesCount: -1
+            }
+         }
+      );
+
+      return res.send({
+
+         favorited: false
+      });
+   }
+
+   // ADD
+   await favoritesCollection.insertOne({
+
+      lessonId,
+      userEmail,
+      createdAt: new Date()
+   });
+
+   await lessonsCollection.updateOne(
+
+      {
+         _id: new ObjectId(lessonId)
+      },
+
+      {
+         $inc: {
+            favoritesCount: 1
+         }
+      }
+   );
+
+   res.send({
+
+      favorited: true
+   });
+});
+
+
+
+
+app.get('/favorites', async(req, res) => {
+
+   const email = req.query.email;
+
+   const query = {
+      userEmail: email
+   };
+
+   const result =
+   await favoritesCollection
+   .find(query)
+   .toArray();
+
+   res.send(result);
+});
+
+
+app.delete('/favorites/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const favorite =
+   await favoritesCollection.findOne({
+
+      _id: new ObjectId(id)
+   });
+
+   // decrease favorites count
+   if(favorite){
+
+      await lessonsCollection.updateOne(
+
+         {
+            _id: new ObjectId(
+               favorite.lessonId
+            )
+         },
+
+         {
+            $inc: {
+               favoritesCount: -1
+            }
+         }
+      );
+   }
+
+   const result =
+   await favoritesCollection.deleteOne({
+
+      _id: new ObjectId(id)
+   });
+
+   res.send(result);
+});
+
+
+
+app.post('/comments', async(req, res) => {
+
+   const comment = req.body;
+
+   const result =
+   await commentsCollection.insertOne(
+      comment
+   );
+
+   res.send(result);
+});
+
+
+app.get('/comments/:lessonId', async(req, res) => {
+
+   const lessonId = req.params.lessonId;
+
+   const query = { lessonId };
+
+   const result =
+   await commentsCollection
+   .find(query)
+   .sort({ createdAt: -1 })
+   .toArray();
+
+   res.send(result);
+});
+
+
+
+app.post('/reports', async(req, res) => {
+
+   const report = req.body;
+
+   const result =
+   await reportsCollection.insertOne(
+      report
+   );
+
+   res.send(result);
+});
+
+
+
+app.get('/similar-lessons', async(req, res) => {
+
+   const {
+      category,
+      emotionalTone
+   } = req.query;
+
+   const result =
+   await lessonsCollection.find({
+
+      privacy: 'Public',
+
+      $or: [
+
+         { category },
+
+         { emotionalTone }
+      ]
+   })
+   .limit(6)
+   .toArray();
+
+   res.send(result);
+});
+
 
 
 

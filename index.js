@@ -43,8 +43,10 @@ async function run() {
 
     const db = client.db('lifeSpark');
     const usersCollection = db.collection('users');
+    const lessonsCollection = db.collection('lessons');
 
 
+// API endpoint to create a new user
 
     app.post('/users', async (req, res) => {
       
@@ -64,6 +66,24 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
+
+
+
+
+
+
+
+
+    // API endpoint to create a new lesson
+
+    app.post('/lessons', async(req, res) => {
+
+   const lesson = req.body;
+
+   const result = await lessonsCollection.insertOne(lesson);
+
+   res.send(result);
+});
 
     
 

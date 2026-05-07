@@ -85,7 +85,146 @@ async function run() {
    res.send(result);
 });
 
+app.get('/lessons', async(req, res) => {
+
+   const email = req.query.email;
+
+   const query = {
+      creatorEmail: email
+   };
+
+   const result = await lessonsCollection
+   .find(query)
+   .toArray();
+
+   res.send(result);
+});
+
+
+const { ObjectId } = require('mongodb');
+
+app.delete('/lessons/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const query = {
+      _id: new ObjectId(id)
+   };
+
+   const result = await lessonsCollection.deleteOne(query);
+
+   res.send(result);
+});
+
+
     
+app.patch('/lessons/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const updatedLesson = req.body;
+
+   const query = {
+      _id: new ObjectId(id)
+   };
+
+   const updatedDoc = {
+
+      $set: {
+
+         title: updatedLesson.title,
+
+         description: updatedLesson.description,
+
+         category: updatedLesson.category,
+
+         emotionalTone: updatedLesson.emotionalTone,
+
+         image: updatedLesson.image,
+
+         privacy: updatedLesson.privacy,
+
+         accessLevel: updatedLesson.accessLevel,
+      }
+   };
+
+   const result = await lessonsCollection.updateOne(
+      query,
+      updatedDoc
+   );
+
+   res.send(result);
+});
+
+app.patch('/lessons/privacy/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const { privacy } = req.body;
+
+   const result = await lessonsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+         $set: { privacy }
+      }
+   );
+
+   res.send(result);
+});
+
+app.patch('/lessons/access/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const { accessLevel } = req.body;
+
+   const result = await lessonsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+         $set: { accessLevel }
+      }
+   );
+
+   res.send(result);
+});
+
+app.get('/lessons/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const query = {
+      _id: new ObjectId(id)
+   };
+
+   const result = await lessonsCollection.findOne(query);
+
+   res.send(result);
+});
+
+
+
+
+app.get('/public-lessons/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   const query = {
+
+      creatorEmail: email,
+
+      privacy: 'Public'
+   };
+
+   const result = await lessonsCollection
+   .find(query)
+   .sort({ createdAt: -1 })
+   .toArray();
+
+   res.send(result);
+});
+
+
+
 
 
     // Payment related API endpoints can be added here, for example:

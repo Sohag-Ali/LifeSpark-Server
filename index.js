@@ -6,13 +6,20 @@ const dns = require('dns');
 dns.setServers(['1.1.1.1', '8.8.8.8']);
 const { MongoClient, ServerApiVersion } = require('mongodb');
 
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 
 const port = process.env.PORT || 3000
 
 // Middleware to parse JSON bodies
-app.use(express.json())
+
 app.use(cors())
 
+// app.use(
+//    '/webhook',
+//    express.raw({ type: 'application/json' })
+// );
+app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.tav8afj.mongodb.net/?appName=Cluster0`;
 
@@ -61,7 +68,126 @@ async function run() {
     
 
 
+    // Payment related API endpoints can be added here, for example:
 
+    app.post('/create-checkout-session', async (req, res) => {
+      try {
+
+      const paymentInfo = req.body;
+
+      const session = await stripe.checkout.sessions.create({
+
+         line_items: [
+            {
+               price_data: {
+
+                  currency: 'bdt',
+
+                  unit_amount: 150000,
+
+                  product_data: {
+                     name: 'Premium Subscription',
+                  },
+               },
+
+               quantity: 1,
+            },
+         ],
+
+         mode: 'payment',
+
+         metadata: {
+            email: paymentInfo.email,
+         },
+
+         success_url: `${process.env.SITE_DOMAIN}/payment-success`,
+
+         cancel_url: `${process.env.SITE_DOMAIN}/payment-cancel`,
+      });
+
+      console.log(session.url);
+
+      res.send({ url: session.url });
+
+   } catch(error){
+
+      console.log(error);
+
+      res.status(500).send({
+         error: error.message
+      });
+   }
+});
+
+app.get('/users/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   const query = { email };
+
+   const user = await usersCollection.findOne(query);
+
+   res.send(user);
+});
+
+app.patch('/users/premium/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   const result = await usersCollection.updateOne(
+      { email },
+      {
+         $set: {
+            isPremium: true
+         }
+      }
+   );
+
+   res.send(result);
+});
+
+// app.post('/webhook',async (req, res) => {
+
+//     const sig = req.headers['stripe-signature'];
+
+//     let event;
+
+//     try {
+
+//       event = stripe.webhooks.constructEvent(
+//         req.body,
+//         sig,
+//         process.env.STRIPE_WEBHOOK_SECRET
+//       );
+
+//     } catch (err) {
+
+//       return res.status(400).send(
+//         `Webhook Error: ${err.message}`
+//       );
+//     }
+
+//     // payment success
+//     if (event.type === 'checkout.session.completed') {
+
+//       const session = event.data.object;
+
+//       const email = session.metadata.email;
+
+//       // update premium
+//       await usersCollection.updateOne(
+//         { email },
+//         {
+//           $set: {
+//             isPremium: true
+//           }
+//         }
+//       );
+//     }
+
+//     res.send();
+//   }
+// );
 
 
 

@@ -51,6 +51,8 @@ async function run() {
 
    const reportsCollection = db.collection('reports');
 
+   const adminActivitiesCollection = db.collection("adminActivities");
+
 
 // API endpoint to create a new user
 
@@ -74,6 +76,70 @@ async function run() {
     });
 
 
+    app.get('/users', async(req, res) => {
+
+   const users =
+   await usersCollection.find().toArray();
+
+   // add total lessons count
+   const usersWithLessons =
+   await Promise.all(
+
+      users.map(async(user) => {
+
+         const totalLessons =
+         await lessonsCollection.countDocuments({
+
+            creatorEmail: user.email
+         });
+
+         return {
+
+            ...user,
+
+            totalLessons
+         };
+      })
+   );
+
+   res.send(usersWithLessons);
+});
+
+app.patch('/users/admin/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const result =
+   await usersCollection.updateOne(
+
+      {
+         _id: new ObjectId(id)
+      },
+
+      {
+         $set: {
+            role: 'admin'
+         }
+      }
+   );
+
+   res.send(result);
+});
+
+app.delete('/users/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const result =
+   await usersCollection.deleteOne({
+
+      _id: new ObjectId(id)
+   });
+
+   res.send(result);
+});
+
+
 
 
 
@@ -95,6 +161,12 @@ async function run() {
    lesson.updatedAt = new Date();
 
    lesson.createdAt = new Date();
+   
+   lesson.isFeatured= false;
+
+   lesson.isReviewed= false;
+
+   lesson.reportCount= 0;
 
 
    const result = await lessonsCollection.insertOne(lesson);
@@ -252,6 +324,70 @@ app.get('/public-lessons', async(req, res) => {
    .find(query)
    .sort({ createdAt: -1 })
    .toArray();
+
+   res.send(result);
+});
+
+
+
+app.patch('/users/profile/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   const { name, photoURL } = req.body;
+
+   const result =
+   await usersCollection.updateOne(
+
+      { email },
+
+      {
+         $set: {
+            name,
+            photoURL
+         }
+      }
+   );
+
+   res.send(result);
+});
+
+
+
+
+
+//fdfsfsd
+
+
+app.delete('/admin-lessons/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   // find lesson
+   const lesson =
+   await lessonsCollection.findOne({
+
+      _id: new ObjectId(id)
+   });
+
+   // delete
+   const result =
+   await lessonsCollection.deleteOne({
+
+      _id: new ObjectId(id)
+   });
+
+   // save admin activity
+   await adminActivitiesCollection.insertOne({
+
+      // adminEmail: req.decoded?.email, need veryfitoken
+
+      action: "Deleted Lesson",
+
+      lessonTitle: lesson?.title,
+
+      timestamp: new Date()
+   });
 
    res.send(result);
 });
@@ -834,6 +970,394 @@ app.delete('/favorites/:lessonId/:email', async(req, res) => {
    );
 
    res.send(result);
+});
+
+
+
+
+
+//admom related API endpoints can be added here, for example:
+
+
+
+app.get('/admin-stats', async(req, res) => {
+
+   // total users
+   const totalUsers =
+   await usersCollection.countDocuments();
+
+   // total public lessons
+   const totalLessons =
+   await lessonsCollection.countDocuments({
+
+      privacy: 'Public'
+   });
+
+   // total reports
+   const totalReports =
+   await reportsCollection.countDocuments();
+
+   // today's lessons
+   const today = new Date();
+
+   today.setHours(0,0,0,0);
+
+   const todaysLessons =
+   await lessonsCollection.countDocuments({
+
+      createdAt: {
+         $gte: today
+      }
+   });
+
+   // top contributors
+   const topContributors =
+   await lessonsCollection.aggregate([
+
+      {
+         $group: {
+
+            _id: "$creatorEmail",
+
+            creatorName: {
+               $first: "$creatorName"
+            },
+
+            creatorPhoto: {
+               $first: "$creatorPhoto"
+            },
+
+            totalLessons: {
+               $sum: 1
+            }
+         }
+      },
+
+      {
+         $sort: {
+            totalLessons: -1
+         }
+      },
+
+      {
+         $limit: 5
+      }
+
+   ]).toArray();
+
+   res.send({
+
+      totalUsers,
+
+      totalLessons,
+
+      totalReports,
+
+      todaysLessons,
+
+      topContributors
+   });
+});
+
+
+app.get('/admin-lessons', async(req, res) => {
+
+   const {
+      category,
+      privacy,
+      flagged
+   } = req.query;
+
+   const query = {};
+
+   // category filter
+   if(category){
+
+      query.category = category;
+   }
+
+   // privacy filter
+   if(privacy){
+
+      query.privacy = privacy;
+   }
+
+   // flagged filter
+   if(flagged === "true"){
+
+      query.reportCount = {
+         $gt: 0
+      };
+   }
+
+   const lessons =
+   await lessonsCollection
+   .find(query)
+   .sort({
+      createdAt: -1
+   })
+   .toArray();
+
+   res.send(lessons);
+});
+
+
+app.patch('/featured-lessons/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+   const { featured } = req.body;
+
+   const result =
+   await lessonsCollection.updateOne(
+
+      {
+         _id: new ObjectId(id)
+      },
+
+      {
+         $set: {
+            isFeatured: featured
+         }
+      }
+   );
+
+
+   // save activity
+   await adminActivitiesCollection.insertOne({
+
+      adminEmail: req.decoded?.email,
+
+      action: featured
+      ?
+      "Featured Lesson"
+      :
+      "Removed Featured",
+
+      lessonTitle: lesson?.title,
+
+      timestamp: new Date()
+   });
+
+
+   res.send(result);
+});
+
+
+
+app.patch('/reviewed-lessons/:id', async(req, res) => {
+
+   const id = req.params.id;
+
+    // lesson
+   const lesson =
+   await lessonsCollection.findOne({
+
+      _id: new ObjectId(id)
+   });
+
+   // update
+   const result =
+   await lessonsCollection.updateOne(
+
+      {
+         _id: new ObjectId(id)
+      },
+
+      {
+         $set: {
+            isReviewed: true
+         }
+      }
+   );
+
+   // activity save
+   await adminActivitiesCollection.insertOne({
+
+      adminEmail: req.decoded?.email,
+
+      action: "Reviewed Lesson",
+
+      lessonTitle: lesson?.title,
+
+      timestamp: new Date()
+   });
+
+   res.send(result);
+});
+
+
+app.get('/lesson-stats', async(req, res) => {
+
+   const publicLessons =
+   await lessonsCollection.countDocuments({
+
+      privacy: 'Public'
+   });
+
+   const privateLessons =
+   await lessonsCollection.countDocuments({
+
+      privacy: 'Private'
+   });
+
+   const flaggedLessons =
+   await lessonsCollection.countDocuments({
+
+      reportCount: {
+         $gt: 0
+      }
+   });
+
+   res.send({
+
+      publicLessons,
+
+      privateLessons,
+
+      flaggedLessons
+   });
+});
+
+
+app.get('/reported-lessons', async(req, res) => {
+
+   const lessons =
+   await lessonsCollection.find({
+
+      reportCount: {
+         $gt: 0
+      }
+   })
+   .sort({
+      reportCount: -1
+   })
+   .toArray();
+
+   res.send(lessons);
+});
+
+app.get('/lesson-reports/:id', async(req, res) => {
+
+   const lessonId = req.params.id;
+
+   const reports =
+   await reportsCollection.find({
+
+      lessonId
+   }).toArray();
+
+   res.send(reports);
+});
+
+app.patch('/ignore-reports/:id', async(req, res) => {
+
+   const lessonId = req.params.id;
+
+   // lesson
+   const lesson =
+   await lessonsCollection.findOne({
+
+      _id: new ObjectId(lessonId)
+   });
+
+   // reset report count
+   await lessonsCollection.updateOne(
+
+      {
+         _id: new ObjectId(lessonId)
+      },
+
+      {
+         $set: {
+            reportCount: 0
+         }
+      }
+   );
+
+   // delete reports
+   await reportsCollection.deleteMany({
+
+      lessonId
+   });
+
+   // activity save
+   await adminActivitiesCollection.insertOne({
+
+      adminEmail: req.decoded?.email,
+
+      action: "Ignored Reports",
+
+      lessonTitle: lesson?.title,
+
+      timestamp: new Date()
+   });
+
+   res.send({
+      success: true
+   });
+});
+
+
+app.get('/admin-activity/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   // total actions
+   const totalActions =
+   await adminActivitiesCollection.countDocuments({
+
+      adminEmail: email
+   });
+
+   // deleted
+   const deletedLessons =
+   await adminActivitiesCollection.countDocuments({
+
+      adminEmail: email,
+
+      action: "Deleted Lesson"
+   });
+
+   // featured
+   const featuredLessons =
+   await adminActivitiesCollection.countDocuments({
+
+      adminEmail: email,
+
+      action: "Featured Lesson"
+   });
+
+   // reviewed
+   const reviewedLessons =
+   await adminActivitiesCollection.countDocuments({
+
+      adminEmail: email,
+
+      action: "Reviewed Lesson"
+   });
+
+   // ignored
+   const ignoredReports =
+   await adminActivitiesCollection.countDocuments({
+
+      adminEmail: email,
+
+      action: "Ignored Reports"
+   });
+
+   res.send({
+
+      totalActions,
+
+      deletedLessons,
+
+      featuredLessons,
+
+      reviewedLessons,
+
+      ignoredReports
+   });
 });
 
 

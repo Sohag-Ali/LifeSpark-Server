@@ -314,16 +314,41 @@ app.get('/public-lessons/:email', async(req, res) => {
 });
 
 
-app.get('/public-lessons', async(req, res) => {
+// details of a public lesson for non-logged in users with search filter, category filter and emotional tone filter
+app.get('/public-lessons', async (req, res) => {
+
+   const {
+      category,
+      emotionalTone,
+      search
+   } = req.query;
 
    const query = {
       privacy: 'Public'
    };
 
+   // category filter
+   if (category) {
+      query.category = category;
+   }
+
+   // emotional tone filter
+   if (emotionalTone) {
+      query.emotionalTone = emotionalTone;
+   }
+
+   // search filter
+   if (search) {
+      query.title = {
+         $regex: search,
+         $options: 'i'
+      };
+   }
+
    const result = await lessonsCollection
-   .find(query)
-   .sort({ createdAt: -1 })
-   .toArray();
+      .find(query)
+      .sort({ createdAt: -1 })
+      .toArray();
 
    res.send(result);
 });
@@ -760,14 +785,15 @@ app.get('/similar-lessons/:id', async(req, res) => {
 });
 
 
+//............................Home Page APIs................................
 
+// home page e feaured lessons show api, can show admin feature added card
 app.get('/featured-lessons', async(req, res) => {
 
    const query = {
+      privacy: 'Public',
 
-      // isFeatured: true,
-
-      
+      isFeatured: true
    };
 
    const result =
@@ -779,8 +805,7 @@ app.get('/featured-lessons', async(req, res) => {
    res.send(result);
 });
 
-
-
+// home page e top contributors show api, can show admin feature added card
 app.get('/top-contributors', async(req, res) => {
 
    const result =
@@ -820,6 +845,7 @@ app.get('/top-contributors', async(req, res) => {
    res.send(result);
 });
 
+// home page e most saved lessons show api, can show admin feature added card
 app.get('/most-saved-lessons', async(req, res) => {
 
    const result =

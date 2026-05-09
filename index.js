@@ -153,6 +153,7 @@ app.delete('/users/:id', async(req, res) => {
    const lesson = req.body;
       // default fields
    lesson.likes = [];
+   lesson.favorites=[];
 
    lesson.likesCount = 0;
 
@@ -544,72 +545,157 @@ app.post('/favorites', async(req, res) => {
 });
 
 
-app.patch('/favorites/:lessonId', async(req, res) => {
+// app.patch('/favorites/:lessonId', async(req, res) => {
 
-   const lessonId = req.params.lessonId;
+//    const lessonId = req.params.lessonId;
 
-   const { userEmail } = req.body;
+//    const { userEmail } = req.body;
 
-   // already favorite?
-   const existingFavorite =
-   await favoritesCollection.findOne({
+//    // already favorite?
+//    const existingFavorite =
+//    await favoritesCollection.findOne({
 
-      lessonId,
-      userEmail
-   });
+//       lessonId,
+//       userEmail
+//    });
 
-   // REMOVE
-   if(existingFavorite){
+//    // REMOVE
+//    if(existingFavorite){
 
-      await favoritesCollection.deleteOne({
+//       await favoritesCollection.deleteOne({
 
-         _id: existingFavorite._id
-      });
+//          _id: existingFavorite._id
+//       });
 
-      await lessonsCollection.updateOne(
+//       await lessonsCollection.updateOne(
 
-         {
-            _id: new ObjectId(lessonId)
-         },
+//          {
+//             _id: new ObjectId(lessonId)
+//          },
 
-         {
-            $inc: {
-               favoritesCount: -1
-            }
-         }
-      );
+//          {
+//             $inc: {
+//                favoritesCount: -1
+//             }
+//          }
+//       );
 
-      return res.send({
+//       return res.send({
 
-         favorited: false
-      });
-   }
+//          favorited: false
+//       });
+//    }
 
-   // ADD
-   await favoritesCollection.insertOne({
+//    // ADD
+//    await favoritesCollection.insertOne({
 
-      lessonId,
-      userEmail,
-      createdAt: new Date()
-   });
+//       lessonId,
+//       userEmail,
+//       createdAt: new Date()
+//    });
 
-   await lessonsCollection.updateOne(
+//    await lessonsCollection.updateOne(
+
+//       {
+//          _id: new ObjectId(lessonId)
+//       },
+
+//       {
+//          $inc: {
+//             favoritesCount: 1
+//          }
+//       }
+//    );
+
+//    res.send({
+
+//       favorited: true
+//    });
+// });
+
+app.patch('/favorites/:lessonId', async (req, res) => {
+
+  const lessonId = req.params.lessonId;
+
+  const { userEmail } = req.body;
+
+  // already favorite?
+  const existingFavorite =
+  await favoritesCollection.findOne({
+
+    lessonId,
+    userEmail
+  });
+
+  // REMOVE FAVORITE
+  if (existingFavorite) {
+
+    // remove from favorites collection
+    await favoritesCollection.deleteOne({
+
+      _id: existingFavorite._id
+    });
+
+    // update lesson
+    await lessonsCollection.updateOne(
 
       {
-         _id: new ObjectId(lessonId)
+        _id: new ObjectId(lessonId)
       },
 
       {
-         $inc: {
-            favoritesCount: 1
-         }
+        $inc: {
+
+          favoritesCount: -1
+        },
+
+        $pull: {
+
+          favorites: userEmail
+        }
       }
-   );
+    );
 
-   res.send({
+    return res.send({
 
-      favorited: true
-   });
+      favorited: false
+    });
+  }
+
+  // ADD FAVORITE
+  await favoritesCollection.insertOne({
+
+    lessonId,
+
+    userEmail,
+
+    createdAt: new Date()
+  });
+
+  // update lesson
+  await lessonsCollection.updateOne(
+
+    {
+      _id: new ObjectId(lessonId)
+    },
+
+    {
+      $inc: {
+
+        favoritesCount: 1
+      },
+
+      $addToSet: {
+
+        favorites: userEmail
+      }
+    }
+  );
+
+  res.send({
+
+    favorited: true
+  });
 });
 
 
@@ -698,6 +784,19 @@ app.get('/comments/:lessonId', async(req, res) => {
    .toArray();
 
    res.send(result);
+});
+
+app.delete('/comments/:id', async (req, res) => {
+
+  const id = req.params.id;
+
+  const result =
+  await commentsCollection.deleteOne({
+
+    _id: new ObjectId(id)
+  });
+
+  res.send(result);
 });
 
 
@@ -1394,6 +1493,7 @@ app.get('/admin-activity/:email', async(req, res) => {
 
     // Payment related API endpoints can be added here, for example:
 
+    //Stipe checkout session create API
     app.post('/create-checkout-session', async (req, res) => {
       try {
 
@@ -1454,6 +1554,7 @@ app.get('/users/:email', async(req, res) => {
    res.send(user);
 });
 
+// user er premium korar api, can be used after payment success or by admin from dashboard
 app.patch('/users/premium/:email', async(req, res) => {
 
    const email = req.params.email;

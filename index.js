@@ -70,6 +70,7 @@ async function run() {
 
       user.role = 'user';
       user.isPremium = false;
+      user.isBanned = false;
       user.createdAt = new Date();
       const result = await usersCollection.insertOne(user);
       res.send(result);
@@ -103,6 +104,19 @@ async function run() {
    );
 
    res.send(usersWithLessons);
+});
+
+app.get('/users/email/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   const user =
+   await usersCollection.findOne({
+
+      email
+   });
+
+   res.send(user);
 });
 
 app.patch('/users/admin/:id', async(req, res) => {
@@ -139,10 +153,35 @@ app.delete('/users/:id', async(req, res) => {
    res.send(result);
 });
 
+// now create a toggle endpoint for banning/unbanning users
 
+app.patch('/users/ban-toggle/:id', async(req, res) => {
 
+   const id = req.params.id;
 
+   const user =
+   await usersCollection.findOne({
 
+      _id: new ObjectId(id)
+   });
+
+   const result =
+   await usersCollection.updateOne(
+
+      {
+         _id: new ObjectId(id)
+      },
+
+      {
+         $set: {
+
+            isBanned: !user.isBanned
+         }
+      }
+   );
+
+   res.send(result);
+});
 
 
 
@@ -803,11 +842,30 @@ app.delete('/comments/:id', async (req, res) => {
 
 app.post('/reports', async(req, res) => {
 
-   const report = req.body;
+   const reportData = req.body;
 
+   // save report
    const result =
    await reportsCollection.insertOne(
-      report
+
+      reportData
+   );
+
+   // increase report count
+   await lessonsCollection.updateOne(
+
+      {
+         _id: new ObjectId(
+            reportData.lessonId
+         )
+      },
+
+      {
+         $inc: {
+
+            reportCount: 1
+         }
+      }
    );
 
    res.send(result);
@@ -982,6 +1040,22 @@ app.get('/dashboard-stats/:email', async(req, res) => {
       userEmail: email
    });
 
+   // public lessons
+   const publicLessons =
+   await lessonsCollection.countDocuments({
+
+      creatorEmail: email,
+
+      privacy: "Public"
+   });
+
+    // total reports
+   const totalReports =
+   await reportsCollection.countDocuments({
+
+      reportedUserEmail: email
+   });
+
    // recent lessons
    const recentLessons =
    await lessonsCollection
@@ -1003,6 +1077,8 @@ app.get('/dashboard-stats/:email', async(req, res) => {
       totalLessons,
 
       totalFavorites,
+      publicLessons,
+      totalReports,
 
       recentLessons
    });
@@ -1233,6 +1309,14 @@ app.patch('/featured-lessons/:id', async(req, res) => {
 
    const { featured } = req.body;
 
+   // find lesson
+   const lesson =
+   await lessonsCollection.findOne({
+
+      _id: new ObjectId(id)
+   });
+
+   // update
    const result =
    await lessonsCollection.updateOne(
 
@@ -1242,18 +1326,19 @@ app.patch('/featured-lessons/:id', async(req, res) => {
 
       {
          $set: {
+
             isFeatured: featured
          }
       }
    );
-
 
    // save activity
    await adminActivitiesCollection.insertOne({
 
       adminEmail: req.decoded?.email,
 
-      action: featured
+      action:
+      featured
       ?
       "Featured Lesson"
       :
@@ -1263,7 +1348,6 @@ app.patch('/featured-lessons/:id', async(req, res) => {
 
       timestamp: new Date()
    });
-
 
    res.send(result);
 });
@@ -1482,6 +1566,52 @@ app.get('/admin-activity/:email', async(req, res) => {
       reviewedLessons,
 
       ignoredReports
+   });
+});
+
+app.get('/user-summary/:email', async(req, res) => {
+
+   const email = req.params.email;
+
+   // total lessons
+   const totalLessons =
+   await lessonsCollection.countDocuments({
+
+      creatorEmail: email
+   });
+
+   // public lessons
+   const publicLessons =
+   await lessonsCollection.countDocuments({
+
+      creatorEmail: email,
+
+      privacy: "Public"
+   });
+
+   // saved lessons
+   const totalSaved =
+   await favoritesCollection.countDocuments({
+
+      userEmail: email
+   });
+
+   // reports
+   const totalReports =
+   await reportsCollection.countDocuments({
+
+      reportedUserEmail: email
+   });
+
+   res.send({
+
+      totalLessons,
+
+      publicLessons,
+
+      totalSaved,
+
+      totalReports
    });
 });
 

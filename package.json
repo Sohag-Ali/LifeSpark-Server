@@ -11,9 +11,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "firebase-admin": "^13.9.0",
+    "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.2.0",
     "stripe": "^22.1.0"
   }

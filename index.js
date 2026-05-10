@@ -5,11 +5,37 @@ require('dotenv').config();
 const dns = require('dns');
 dns.setServers(['1.1.1.1', '8.8.8.8']);
 const { MongoClient, ServerApiVersion } = require('mongodb');
+const { ObjectId } = require('mongodb');
 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 
 const port = process.env.PORT || 3000
+
+const admin = require("firebase-admin");
+
+// const serviceAccount = require("./firebase-adminsdk.json");
+
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount)
+// });
+
+admin.initializeApp({
+
+  credential: admin.credential.cert({
+
+    projectId:
+    process.env.FIREBASE_PROJECT_ID,
+
+    clientEmail:
+    process.env.FIREBASE_CLIENT_EMAIL,
+
+    privateKey:
+    process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+
+  })
+});
+
 
 // Middleware to parse JSON bodies
 
@@ -20,6 +46,43 @@ app.use(cors())
 //    express.raw({ type: 'application/json' })
 // );
 app.use(express.json());
+
+const verifyFirebaseToken =
+async(req, res, next) => {
+
+   const authHeader =
+   req.headers.authorization;
+
+   if(!authHeader){
+
+      return res.status(401).send({
+
+         message: 'unauthorized access'
+      });
+   }
+
+   const token =
+   authHeader.split(' ')[1];
+
+   try {
+
+      const decoded =
+      await admin.auth()
+
+      .verifyIdToken(token);
+
+      req.decoded = decoded;
+
+      next();
+
+   } catch(error){
+
+      return res.status(401).send({
+
+         message: 'unauthorized access'
+      });
+   }
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.tav8afj.mongodb.net/?appName=Cluster0`;
 
@@ -54,8 +117,35 @@ async function run() {
    const adminActivitiesCollection = db.collection("adminActivities");
 
 
-// API endpoint to create a new user
 
+
+
+
+   const verifyAdmin = async(req, res, next) => {
+
+   const email =
+   req.decoded.email;
+
+   const user =
+   await usersCollection.findOne({
+
+      email
+   });
+
+   if(user?.role !== "admin"){
+
+      return res.status(403).send({
+
+         message: 'forbidden access'
+      });
+   }
+
+   next();
+};
+
+
+// API endpoint to create a new user
+// API endpoint to create a new user
     app.post('/users', async (req, res) => {
       
       const user = req.body;
@@ -76,7 +166,7 @@ async function run() {
       res.send(result);
     });
 
-
+// ...API endpoint to get all users, only for admin
     app.get('/users', async(req, res) => {
 
    const users =
@@ -106,6 +196,7 @@ async function run() {
    res.send(usersWithLessons);
 });
 
+
 app.get('/users/email/:email', async(req, res) => {
 
    const email = req.params.email;
@@ -119,7 +210,8 @@ app.get('/users/email/:email', async(req, res) => {
    res.send(user);
 });
 
-app.patch('/users/admin/:id', async(req, res) => {
+//...API endpoint to make a user admin, only for existing admin
+app.patch('/users/admin/:id', verifyFirebaseToken, verifyAdmin, async(req, res) => {
 
    const id = req.params.id;
 
@@ -136,60 +228,148 @@ app.patch('/users/admin/:id', async(req, res) => {
          }
       }
    );
+     // save admin activity
+      await adminActivitiesCollection.insertOne({
+
+         adminEmail:
+         req.decoded.email,
+
+         action: "Made Admin",
+
+         targetUserEmail:
+         user?.email,
+
+         targetUserName:
+         user?.name,
+
+         timestamp: new Date()
+      });
 
    res.send(result);
 });
 
-app.delete('/users/:id', async(req, res) => {
+//...API endpoint to delete a user, only for admin
+app.delete(
 
-   const id = req.params.id;
+   '/users/:id',
 
-   const result =
-   await usersCollection.deleteOne({
+   verifyFirebaseToken,
 
-      _id: new ObjectId(id)
-   });
+   verifyAdmin,
 
-   res.send(result);
+   async(req, res) => {
+
+      const id =
+      req.params.id;
+
+      // find user first
+      const user =
+      await usersCollection.findOne({
+
+         _id: new ObjectId(id)
+      });
+
+      // delete user
+      const result =
+      await usersCollection.deleteOne({
+
+         _id: new ObjectId(id)
+      });
+
+      // save admin activity
+      await adminActivitiesCollection.insertOne({
+
+         adminEmail:
+         req.decoded.email,
+
+         action: "Deleted User",
+
+         deletedUserEmail:
+         user?.email,
+
+         deletedUserName:
+         user?.name,
+
+         timestamp: new Date()
+      });
+
+      res.send(result);
 });
 
 // now create a toggle endpoint for banning/unbanning users
+//...API endpoint to toggle ban/unban a user, only for admin
+app.patch('/users/ban-toggle/:id',
 
-app.patch('/users/ban-toggle/:id', async(req, res) => {
+   verifyFirebaseToken,
 
-   const id = req.params.id;
+   verifyAdmin,
 
-   const user =
-   await usersCollection.findOne({
+   async(req, res) => {
 
-      _id: new ObjectId(id)
-   });
+      const id =
+      req.params.id;
 
-   const result =
-   await usersCollection.updateOne(
+      // find user
+      const user =
+      await usersCollection.findOne({
 
-      {
          _id: new ObjectId(id)
-      },
+      });
 
-      {
-         $set: {
+      // toggle ban
+      const result =
+      await usersCollection.updateOne(
 
-            isBanned: !user.isBanned
+         {
+            _id: new ObjectId(id)
+         },
+
+         {
+            $set: {
+
+               isBanned:
+               !user?.isBanned
+            }
          }
-      }
-   );
+      );
 
-   res.send(result);
+      // save activity
+      await adminActivitiesCollection.insertOne({
+
+         adminEmail:
+         req.decoded.email,
+
+         action:
+
+         user?.isBanned
+         ?
+
+         "Unbanned User"
+
+         :
+
+         "Banned User",
+
+         targetUserEmail:
+         user?.email,
+
+         targetUserName:
+         user?.name,
+
+         timestamp: new Date()
+      });
+
+      res.send(result);
 });
 
 
 
     // API endpoint to create a new lesson
-
+//...API endpoint to create a new lesson, only for logged in users, and also save the creator email and name from decoded token
     app.post('/lessons', async(req, res) => {
 
    const lesson = req.body;
+
       // default fields
    lesson.likes = [];
    lesson.favorites=[];
@@ -214,6 +394,7 @@ app.patch('/users/ban-toggle/:id', async(req, res) => {
    res.send(result);
 });
 
+//...API endpoint to get all lessons of a user by email, only for logged in users and also verify the email from decoded token
 app.get('/lessons', async(req, res) => {
 
    const email = req.query.email;
@@ -230,23 +411,49 @@ app.get('/lessons', async(req, res) => {
 });
 
 
-const { ObjectId } = require('mongodb');
 
-app.delete('/lessons/:id', async(req, res) => {
+// ...API endpoint to delete a lesson by ID, only by admin
+app.delete('/lessons/:id',verifyFirebaseToken,async(req, res) => {
 
-   const id = req.params.id;
+      const id =
+      req.params.id;
 
-   const query = {
-      _id: new ObjectId(id)
-   };
+      // find lesson first
+      const lesson =
+      await lessonsCollection.findOne({
 
-   const result = await lessonsCollection.deleteOne(query);
+         _id: new ObjectId(id)
+      });
 
-   res.send(result);
+      // delete lesson
+      const result =
+      await lessonsCollection.deleteOne({
+
+         _id: new ObjectId(id)
+      });
+
+      // save admin activity
+      await adminActivitiesCollection.insertOne({
+
+         adminEmail:
+         req.decoded.email,
+
+         action: "Deleted Lesson",
+
+         lessonTitle:
+         lesson?.title,
+
+         lessonCreator:
+         lesson?.creatorEmail,
+
+         timestamp: new Date()
+      });
+
+      res.send(result);
 });
 
 
-    
+    //...API endpoint to update a lesson by ID, only by creator or admin, and also update the updatedAt field
 app.patch('/lessons/:id', async(req, res) => {
 
    const id = req.params.id;
@@ -286,7 +493,8 @@ app.patch('/lessons/:id', async(req, res) => {
    res.send(result);
 });
 
-app.patch('/lessons/privacy/:id', async(req, res) => {
+//...API endpoint to update lesson privacy, only by creator or admin
+app.patch('/lessons/privacy/:id', verifyFirebaseToken, async(req, res) => {
 
    const id = req.params.id;
 
@@ -302,7 +510,8 @@ app.patch('/lessons/privacy/:id', async(req, res) => {
    res.send(result);
 });
 
-app.patch('/lessons/access/:id', async(req, res) => {
+//...API endpoint to update lesson access level, only by creator or admin
+app.patch('/lessons/access/:id',verifyFirebaseToken, async(req, res) => {
 
    const id = req.params.id;
 
@@ -317,8 +526,8 @@ app.patch('/lessons/access/:id', async(req, res) => {
 
    res.send(result);
 });
-
-app.get('/lessons/:id', async(req, res) => {
+//...API endpoint to get lesson details by ID, only for public lessons or if the requester is the creator or 
+app.get('/lessons/:id',verifyFirebaseToken, async(req, res) => {
 
    const id = req.params.id;
 
@@ -333,8 +542,8 @@ app.get('/lessons/:id', async(req, res) => {
 
 
 
-
-app.get('/public-lessons/:email', async(req, res) => {
+//...Public Lesson Show in Admin User Profile Which Admin Created Lesson
+app.get('/public-lessons/:email',verifyFirebaseToken, async(req, res) => {
 
    const email = req.params.email;
 
@@ -354,7 +563,7 @@ app.get('/public-lessons/:email', async(req, res) => {
 });
 
 
-// details of a public lesson for non-logged in users with search filter, category filter and emotional tone filter
+//...public lessonpage e search and filter option add korar api, can show admin feature added card and also show in reported lesson page for admin review and action
 app.get('/public-lessons', async (req, res) => {
 
    const {
@@ -421,10 +630,10 @@ app.patch('/users/profile/:email', async(req, res) => {
 
 
 
-//fdfsfsd
 
 
-app.delete('/admin-lessons/:id', async(req, res) => {
+//...Admin Delete Lesson API, can show admin feature added card and also show in reported lesson page for admin review and action
+app.delete('/admin-lessons/:id',verifyFirebaseToken, verifyAdmin, async(req, res) => {
 
    const id = req.params.id;
 
@@ -445,7 +654,7 @@ app.delete('/admin-lessons/:id', async(req, res) => {
    // save admin activity
    await adminActivitiesCollection.insertOne({
 
-      // adminEmail: req.decoded?.email, need veryfitoken
+      adminEmail: req.decoded?.email, 
 
       action: "Deleted Lesson",
 
@@ -480,7 +689,7 @@ app.get('/creator-lessons-count/:email', async(req, res) => {
 
 
 
-app.patch('/lessons/like/:id', async(req, res) => {
+app.patch('/lessons/like/:id',verifyFirebaseToken, async(req, res) => {
 
    const id = req.params.id;
 
@@ -535,7 +744,7 @@ app.patch('/lessons/like/:id', async(req, res) => {
 });
 
 
-app.post('/favorites', async(req, res) => {
+app.post('/favorites', verifyFirebaseToken, async(req, res) => {
 
    const favorite = req.body;
 
@@ -652,7 +861,7 @@ app.post('/favorites', async(req, res) => {
 //    });
 // });
 
-app.patch('/favorites/:lessonId', async (req, res) => {
+app.patch('/favorites/:lessonId', verifyFirebaseToken, async (req, res) => {
 
   const lessonId = req.params.lessonId;
 
@@ -739,10 +948,12 @@ app.patch('/favorites/:lessonId', async (req, res) => {
 
 
 
-
-app.get('/favorites', async(req, res) => {
+//...API endpoint to get all favorites of a user by email, only for logged in users and also verify the email from decoded token
+app.get('/favorites', verifyFirebaseToken, async(req, res) => {
 
    const email = req.query.email;
+
+   
 
    const query = {
       userEmail: email
@@ -756,8 +967,8 @@ app.get('/favorites', async(req, res) => {
    res.send(result);
 });
 
-
-app.delete('/favorites/:id', async(req, res) => {
+//...API endpoint to delete a favorite by ID, only by creator or admin
+app.delete('/favorites/:id', verifyFirebaseToken, async(req, res) => {
 
    const id = req.params.id;
 
@@ -797,7 +1008,7 @@ app.delete('/favorites/:id', async(req, res) => {
 
 
 
-app.post('/comments', async(req, res) => {
+app.post('/comments', verifyFirebaseToken, async(req, res) => {
 
    const comment = req.body;
 
@@ -810,7 +1021,7 @@ app.post('/comments', async(req, res) => {
 });
 
 
-app.get('/comments/:lessonId', async(req, res) => {
+app.get('/comments/:lessonId', verifyFirebaseToken, async(req, res) => {
 
    const lessonId = req.params.lessonId;
 
@@ -825,7 +1036,7 @@ app.get('/comments/:lessonId', async(req, res) => {
    res.send(result);
 });
 
-app.delete('/comments/:id', async (req, res) => {
+app.delete('/comments/:id', verifyFirebaseToken, async (req, res) => {
 
   const id = req.params.id;
 
@@ -840,7 +1051,7 @@ app.delete('/comments/:id', async (req, res) => {
 
 
 
-app.post('/reports', async(req, res) => {
+app.post('/reports', verifyFirebaseToken, async(req, res) => {
 
    const reportData = req.body;
 
@@ -873,7 +1084,7 @@ app.post('/reports', async(req, res) => {
 
 
 
-app.get('/similar-lessons', async(req, res) => {
+app.get('/similar-lessons', verifyFirebaseToken, async(req, res) => {
 
    const {
       category,
@@ -898,7 +1109,7 @@ app.get('/similar-lessons', async(req, res) => {
    res.send(result);
 });
 
-app.get('/similar-lessons/:id', async(req, res) => {
+app.get('/similar-lessons/:id', verifyFirebaseToken, async(req, res) => {
 
    const id = req.params.id;
 
@@ -945,7 +1156,7 @@ app.get('/similar-lessons/:id', async(req, res) => {
 //............................Home Page APIs................................
 
 // home page e feaured lessons show api, can show admin feature added card
-app.get('/featured-lessons', async(req, res) => {
+app.get('/featured-lessons',  async(req, res) => {
 
    const query = {
       privacy: 'Public',
@@ -1021,7 +1232,7 @@ app.get('/most-saved-lessons', async(req, res) => {
 
 
 
-
+//.............................Dashboard APIs................................
 app.get('/dashboard-stats/:email', async(req, res) => {
 
    const email = req.params.email;
@@ -1085,9 +1296,10 @@ app.get('/dashboard-stats/:email', async(req, res) => {
 });
 
 
-app.get('/favorites/:email', async(req, res) => {
+app.get('/favorites/:email', verifyFirebaseToken, async(req, res) => {
 
    const email = req.params.email;
+   console.log('headers', req.headers);
 
    const {
       category,
@@ -1140,7 +1352,7 @@ app.get('/favorites/:email', async(req, res) => {
    res.send(result);
 });
 
-app.delete('/favorites/:lessonId/:email', async(req, res) => {
+app.delete('/favorites/:lessonId/:email', verifyFirebaseToken, async(req, res) => {
 
    const {
       lessonId,
@@ -1180,7 +1392,7 @@ app.delete('/favorites/:lessonId/:email', async(req, res) => {
 //admom related API endpoints can be added here, for example:
 
 
-
+//...Dashboard e stats show korar api, can show admin feature added card and also show in reported lesson page for admin review and action
 app.get('/admin-stats', async(req, res) => {
 
    // total users
@@ -1260,7 +1472,7 @@ app.get('/admin-stats', async(req, res) => {
    });
 });
 
-
+//...Admin Lessons Show in Admin Dashboard with filter option, can show admin feature added card and also show in reported lesson page for admin review and action
 app.get('/admin-lessons', async(req, res) => {
 
    const {
@@ -1302,8 +1514,8 @@ app.get('/admin-lessons', async(req, res) => {
    res.send(lessons);
 });
 
-
-app.patch('/featured-lessons/:id', async(req, res) => {
+//...Admin Featured Lesson Toggle API, can show admin feature added card and also show in reported lesson page for admin review and action
+app.patch('/featured-lessons/:id',verifyFirebaseToken, verifyAdmin, async(req, res) => {
 
    const id = req.params.id;
 
@@ -1332,29 +1544,13 @@ app.patch('/featured-lessons/:id', async(req, res) => {
       }
    );
 
-   // save activity
-   await adminActivitiesCollection.insertOne({
-
-      adminEmail: req.decoded?.email,
-
-      action:
-      featured
-      ?
-      "Featured Lesson"
-      :
-      "Removed Featured",
-
-      lessonTitle: lesson?.title,
-
-      timestamp: new Date()
-   });
 
    res.send(result);
 });
 
 
-
-app.patch('/reviewed-lessons/:id', async(req, res) => {
+//...Admin Reviewed Lesson Toggle API, can show admin feature added card and also show in reported lesson page for admin review and action, after review the lesson will be marked as reviewed and also save this activity in admin activity collection
+app.patch('/reviewed-lessons/:id', verifyFirebaseToken, verifyAdmin, async(req, res) => {
 
    const id = req.params.id;
 
@@ -1395,7 +1591,7 @@ app.patch('/reviewed-lessons/:id', async(req, res) => {
    res.send(result);
 });
 
-
+//...Dashboard e lesson stats show korar api, can show admin feature added card and also show in reported lesson page for admin review and action
 app.get('/lesson-stats', async(req, res) => {
 
    const publicLessons =
@@ -1428,7 +1624,7 @@ app.get('/lesson-stats', async(req, res) => {
    });
 });
 
-
+//....Dashboard e reported lesson show korar api, can show admin feature added card and also show in reported lesson page for admin review and action
 app.get('/reported-lessons', async(req, res) => {
 
    const lessons =
@@ -1445,7 +1641,7 @@ app.get('/reported-lessons', async(req, res) => {
 
    res.send(lessons);
 });
-
+//...Admin Reported Lesson Review Page e report details show korar api, can show admin feature added card and also show in reported lesson page for admin review and action
 app.get('/lesson-reports/:id', async(req, res) => {
 
    const lessonId = req.params.id;
@@ -1459,7 +1655,8 @@ app.get('/lesson-reports/:id', async(req, res) => {
    res.send(reports);
 });
 
-app.patch('/ignore-reports/:id', async(req, res) => {
+//...Admin Ignore Reported Lesson API, can show admin feature added card and also show in reported lesson page for admin review and action, after ignore the report count will be reset and also delete all reports for that lesson
+app.patch('/ignore-reports/:id',verifyFirebaseToken, verifyAdmin, async(req, res) => {
 
    const lessonId = req.params.id;
 
@@ -1507,8 +1704,8 @@ app.patch('/ignore-reports/:id', async(req, res) => {
    });
 });
 
-
-app.get('/admin-activity/:email', async(req, res) => {
+//...Admin Activity Show in admin Profile Page Which Work in admin our website
+app.get('/admin-activity/:email', verifyFirebaseToken, verifyAdmin, async(req, res) => {
 
    const email = req.params.email;
 
@@ -1519,7 +1716,7 @@ app.get('/admin-activity/:email', async(req, res) => {
       adminEmail: email
    });
 
-   // deleted
+   // deleted lessons
    const deletedLessons =
    await adminActivitiesCollection.countDocuments({
 
@@ -1528,16 +1725,19 @@ app.get('/admin-activity/:email', async(req, res) => {
       action: "Deleted Lesson"
    });
 
-   // featured
-   const featuredLessons =
-   await adminActivitiesCollection.countDocuments({
+ 
 
-      adminEmail: email,
+   //deleted users
 
-      action: "Featured Lesson"
-   });
+   const deletedUsers =
+await adminActivitiesCollection.countDocuments({
 
-   // reviewed
+   adminEmail: email,
+
+   action: "Deleted User"
+});
+
+   // reviewed lessons
    const reviewedLessons =
    await adminActivitiesCollection.countDocuments({
 
@@ -1546,14 +1746,39 @@ app.get('/admin-activity/:email', async(req, res) => {
       action: "Reviewed Lesson"
    });
 
-   // ignored
-   const ignoredReports =
-   await adminActivitiesCollection.countDocuments({
+   //admin
+
+   const madeAdmins =await adminActivitiesCollection.countDocuments({
+
+   adminEmail: email,
+
+   action: "Made Admin"
+});
+
+   // ignored reports
+   const ignoredReports =await adminActivitiesCollection.countDocuments({
 
       adminEmail: email,
 
       action: "Ignored Reports"
    });
+
+   // banned users
+  const bannedUsers =
+await adminActivitiesCollection.countDocuments({
+
+   adminEmail: email,
+
+   action: "Banned User"
+});
+//unbanned users
+const unbannedUsers =
+await adminActivitiesCollection.countDocuments({
+
+   adminEmail: email,
+
+   action: "Unbanned User"
+});
 
    res.send({
 
@@ -1561,14 +1786,21 @@ app.get('/admin-activity/:email', async(req, res) => {
 
       deletedLessons,
 
-      featuredLessons,
+     
 
       reviewedLessons,
+      deletedUsers,
 
-      ignoredReports
+      ignoredReports,
+      madeAdmins,
+
+       bannedUsers,
+
+   unbannedUsers
    });
 });
 
+//... User Summery record api Which work inwebsite show this record in profile page..
 app.get('/user-summary/:email', async(req, res) => {
 
    const email = req.params.email;

@@ -16,25 +16,32 @@ const admin = require("firebase-admin");
 
 // const serviceAccount = require("./firebase-adminsdk.json");
 
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount)
-// });
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
-
-  credential: admin.credential.cert({
-
-    projectId:
-    process.env.FIREBASE_PROJECT_ID,
-
-    clientEmail:
-    process.env.FIREBASE_CLIENT_EMAIL,
-
-    privateKey:
-    process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
-
-  })
+  credential: admin.credential.cert(serviceAccount)
 });
+const serviceAccount = require("./firebase-admin-key.json");
+
+
+
+// admin.initializeApp({
+   
+
+//   credential: admin.credential.cert({
+
+//     projectId:
+//     process.env.FIREBASE_PROJECT_ID,
+
+//     clientEmail:
+//     process.env.FIREBASE_CLIENT_EMAIL,
+
+//     privateKey:
+//     process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+
+//   })
+// });
 
 
 // Middleware to parse JSON bodies
@@ -1992,8 +1999,8 @@ app.patch('/users/premium/:email', async(req, res) => {
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+   //  await client.db("admin").command({ ping: 1 });
+   //  console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     //await client.close();

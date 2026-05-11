@@ -203,42 +203,95 @@ app.get('/users/email/:email', async(req, res) => {
 });
 
 //...API endpoint to make a user admin, only for existing admin
-app.patch('/users/admin/:id', verifyFirebaseToken, verifyAdmin, async(req, res) => {
+// app.patch('/users/admin/:id', verifyFirebaseToken, verifyAdmin, async(req, res) => {
 
-   const id = req.params.id;
+//    const id = req.params.id;
 
-   const result =
-   await usersCollection.updateOne(
+//    const result =
+//    await usersCollection.updateOne(
 
+//       {
+//          _id: new ObjectId(id)
+//       },
+
+//       {
+//          $set: {
+//             role: 'admin'
+//          }
+//       }
+//    );
+//      // save admin activity
+//       await adminActivitiesCollection.insertOne({
+
+//          adminEmail:
+//          req.decoded.email,
+
+//          action: "Made Admin",
+
+//          // targetUserEmail:
+//          // user?.email,
+
+//          // targetUserName:
+//          // user?.name,
+
+//          timestamp: new Date()
+//       });
+
+//    res.send(result);
+// });
+
+app.patch(
+  '/users/admin/:id',
+  verifyFirebaseToken,
+  verifyAdmin,
+
+  async (req, res) => {
+
+    const id = req.params.id;
+
+    // find target user first
+    const targetUser = await usersCollection.findOne({
+      _id: new ObjectId(id)
+    });
+
+    // update role
+    const result = await usersCollection.updateOne(
       {
-         _id: new ObjectId(id)
+        _id: new ObjectId(id)
       },
 
       {
-         $set: {
-            role: 'admin'
-         }
+        $set: {
+          role: 'admin'
+        }
       }
-   );
-     // save admin activity
-      await adminActivitiesCollection.insertOne({
+    );
 
-         adminEmail:
-         req.decoded.email,
+    // activity log
+    await adminActivitiesCollection.insertOne({
 
-         action: "Made Admin",
+      adminEmail: req.decoded.email,
 
-         targetUserEmail:
-         user?.email,
+      action: "Made Admin",
 
-         targetUserName:
-         user?.name,
+      targetUserEmail: targetUser?.email,
 
-         timestamp: new Date()
-      });
+      targetUserName: targetUser?.name,
 
-   res.send(result);
-});
+      timestamp: new Date()
+    });
+
+    // send updated user
+    const updatedUser = await usersCollection.findOne({
+      _id: new ObjectId(id)
+    });
+
+    res.send({
+      modifiedCount: result.modifiedCount,
+      updatedUser
+    });
+  }
+);
 
 //...API endpoint to delete a user, only for admin
 app.delete(

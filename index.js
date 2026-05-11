@@ -1950,16 +1950,16 @@ app.get('/user-summary/:email', async(req, res) => {
    }
 });
 
-app.get('/users/:email', async(req, res) => {
+// app.get('/users/:email', async(req, res) => {
 
-   const email = req.params.email;
+//    const email = req.params.email;
 
-   const query = { email };
+//    const query = { email };
 
-   const user = await usersCollection.findOne(query);
+//    const user = await usersCollection.findOne(query);
 
-   res.send(user);
-});
+//    res.send(user);
+// });
 
 // user er premium korar api, can be used after payment success or by admin from dashboard
 app.patch('/users/premium/:email', async(req, res) => {

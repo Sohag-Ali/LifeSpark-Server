@@ -572,7 +572,7 @@ app.patch('/lessons/access/:id',verifyFirebaseToken, async(req, res) => {
    res.send(result);
 });
 //...API endpoint to get lesson details by ID, only for public lessons or if the requester is the creator or 
-app.get('/lessons/:id',verifyFirebaseToken, async(req, res) => {
+app.get('/lessons/:id',async(req, res) => {
 
    const id = req.params.id;
 
@@ -1154,7 +1154,7 @@ app.get('/similar-lessons', verifyFirebaseToken, async(req, res) => {
    res.send(result);
 });
 
-app.get('/similar-lessons/:id', verifyFirebaseToken, async(req, res) => {
+app.get('/similar-lessons/:id',  async(req, res) => {
 
    const id = req.params.id;
 

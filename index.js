@@ -1209,12 +1209,7 @@ app.get('/featured-lessons',  async(req, res) => {
       isFeatured: true
    };
 
-   const result =
-   await lessonsCollection
-   .find(query)
-   .limit(6)
-   .toArray();
-
+   const result = await lessonsCollection .find(query) .limit(6) .toArray();
    res.send(result);
 });
 
